@@ -12,54 +12,63 @@ from agent.schemas.state.content_generator import ContentForPlatform
 class ContentGenerator(BaseAgent):
 
     twitter_content_generator: LlmAgent
-    linkdin_content_generator: LlmAgent
-    instragram_content_generator: LlmAgent
+    linkedin_content_generator: LlmAgent
+    instagram_content_generator: LlmAgent
     
     def __init__(self,
                 name: str,
                 twitter_content_generator:LlmAgent,
-                linkdin_content_generator:LlmAgent,
-                instragram_content_generator:LlmAgent
+                linkedin_content_generator:LlmAgent,
+                instagram_content_generator:LlmAgent
                 ):
+        """
+        Initializes the ContentGenerator orchestrator.
+        It delegates work to platform-specific LLM agents based on session state.
+        """
 
         sub_agent_list = [
             twitter_content_generator,
-            linkdin_content_generator,
-            instragram_content_generator
+            linkedin_content_generator,
+            instagram_content_generator
             ]
 
         super().__init__(name =name,
             twitter_content_generator = twitter_content_generator,
-            linkdin_content_generator = linkdin_content_generator,
-            instragram_content_generator = instragram_content_generator,
+            linkedin_content_generator = linkedin_content_generator,
+            instagram_content_generator = instagram_content_generator,
             sub_agents=sub_agent_list
             )
         
     @override
     async def _run_async_impl(self,ctx: InvocationContext) -> AsyncGenerator[Event,None]:
+        """
+        Executes the content generator asynchronously.
+        Sets up the required context from campaign outlines and triggers the
+        appropriate sub-agents depending on the selected platforms in the state.
+        """
         if (not ctx.session.state.get("content_direction")):
-            if ctx.session.state.get("campaign_outline"):
-                ctx.session.state["content_direction"] = ctx.session.state.get("campaign_outline").content_direction
+            if (campaign_outline := ctx.session.state.get("campaign_outline")):
+                ctx.session.state["content_direction"] = campaign_outline.get("content_direction")
         
         if (not ctx.session.state.get("context_summary")):
-            if ctx.session.state.get("campaign_outline"):
-                ctx.session.state["context_summary"] = ctx.session.state.get("campaign_outline").summary
+            if (campaign_outline := ctx.session.state.get("campaign_outline")):
+                ctx.session.state["context_summary"] = campaign_outline.get("summary")
         
 
         if (content_for_platform := ctx.session.state.get("content_for_platform")):
             try:
                 content_for_platform = ContentForPlatform.model_validate(content_for_platform)
             except ValidationError:
-                content_for_platform = ContentForPlatform(twitter=False,linkdin=False,instagram=False)  
+                content_for_platform = ContentForPlatform(twitter=False,linkedin=False,instagram=False)  
         
             if content_for_platform.twitter:
                 async for event in self.twitter_content_generator.run_async(ctx):
                     yield event
-            if content_for_platform.linkdin:
-                async for event in self.linkdin_content_generator.run_async(ctx):
+            if content_for_platform.linkedin:
+                async for event in self.linkedin_content_generator.run_async(ctx):
                     yield event
             if content_for_platform.instagram:
-                async for event in self.instragram_content_generator.run_async(ctx):
+                async for event in self.instagram_content_generator.run_async(ctx):
                     yield event
         
                 

@@ -2,19 +2,21 @@ import asyncio
 from google.adk.agents import LlmAgent, SequentialAgent, LoopAgent
 from google.adk.tools import AgentTool
 
-from agent.tools.ContentGenerator import save_svg_file
-from agent.callbacks.ContentGenerator.afteragentcallabacks import save_to_file
+from agent.callbacks.ContentGenerator.after_agent_callabacks import save_to_file
+from agent.callbacks.CampaignMaker.after_agent_callbacks import check_loop_exit
+from agent.callbacks.RootAgent.before_agent_callback import initialize_state
 from agent.tools.CampaignMaker import exit_loop
+from agent.tools.RootAgent import save_state
 
 # Prompts
 from agent.prompts.root_agent import prompt_root_agent
 from agent.prompts.CampaignMaker import prompt_campaign_outline_generator,prompt_campaign_outline_reviewer
-from agent.prompts.ContentGenerator import prompt_twitter_post_generator,prompt_twitter_post_text_generator,prompt_twitter_post_svg_generator
-from agent.prompts.media_generator_tools import prompt_svg_graphic_generator 
+from agent.prompts.ContentGenerator.twitter import prompt_twitter_content_generator,prompt_twitter_post_text_generator
+from agent.prompts.media_generation_tools import prompt_svg_graphic_generator 
 
 # Schemas
-from agent.schemas.CampaignMaker import CampaignStrategy
-from agent.schemas.StrategyReviewer import StrategyReview
+from agent.schemas.CampaignMaker.CamaignMaker import CampaignStrategy
+from agent.schemas.CampaignMaker.StrategyReviewer import StrategyReview
 from agent.schemas.ContentGenerator.ContentGenerator import PostContent,BasePost
 
 from agent.agents.content_generator import ContentGenerator
@@ -37,8 +39,8 @@ campaign_outline_reviewer = LlmAgent(
     description="Reviews and refines campaign outlines.",
     tools = [exit_loop],
     output_key = "review",
-    output_schema = StrategyReview
-
+    output_schema = StrategyReview,
+    after_agent_callback = [check_loop_exit]
 )
 
 # Campaign Maker (Loop non-LLM agent)
@@ -52,7 +54,7 @@ campaign_maker = LoopAgent(
 svg_graphic_generator = LlmAgent(
     name="svg_graphic_generator",
     model="gemini-3.1-flash-lite",
-    instruction=prompt_twitter_post_svg_generator,
+    instruction=prompt_svg_graphic_generator,
     description="Generates an SVG illustration for a post.",
     output_key = "post_content",
     output_schema = PostContent,
@@ -67,18 +69,41 @@ twitter_post_text_generator = LlmAgent(
     output_key = "twitter_posts_text"
 )
 
-twitter_post_generator = LlmAgent(
-    name="twitter_post_generator",
+twitter_content_generator = LlmAgent(
+    name="twitter_content_generator",
     model = "gemini-3.1-flash-lite",
-    instruction = prompt_twitter_post_generator,
+    instruction = prompt_twitter_content_generator,
     description = "Generates outline for twitter posts and orchestrates text and svg generation.",
-    sub_agents=[twitter_post_text_generator, svg_graphic_generator],
     output_key = "twitter_posts",
     output_schema = BasePost
 )
 
+linkedin_content_generator = LlmAgent(
+    name="linkedin_content_generator",
+    model = "gemini-3.1-flash-lite",
+    instruction = prompt_twitter_content_generator,
+    description = "Generates outline for linkedin posts and orchestrates text and svg generation.",
+    output_key = "linkedin_posts",
+    output_schema = BasePost
+)
+
+instagram_content_generator = LlmAgent(
+    name="instagram_content_generator",
+    model = "gemini-3.1-flash-lite",
+    instruction = prompt_twitter_content_generator,
+    description = "Generates outline for instagram posts and orchestrates text and svg generation.",
+    sub_agents=[twitter_post_text_generator, svg_graphic_generator],
+    output_key = "instagram_posts",
+    output_schema = BasePost
+)
 
 
+content_generator_agent = ContentGenerator(
+    name="content_generator_agent",
+    twitter_content_generator=twitter_content_generator,
+    linkedin_content_generator=linkedin_content_generator, # Placeholder for now
+    instagram_content_generator=instagram_content_generator # Placeholder for now
+)
 
 root_agent = LlmAgent(
     name="root_agent",
@@ -86,8 +111,10 @@ root_agent = LlmAgent(
     instruction=prompt_root_agent,
     description="Main orchestrator that coordinates campaign strategy and content creation",
     tools=[
-        AgentTool(agent=ContentGenerator)
+        AgentTool(agent=content_generator_agent),
+        save_state
     ],
     sub_agents=[campaign_maker],
+    before_agent_callback=[initialize_state],
 )
 
