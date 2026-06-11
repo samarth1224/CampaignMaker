@@ -14,10 +14,12 @@ def initialize_state(callback_context: CallbackContext):
                                                                 twitter=True,
                                                                 linkedin=False,
                                                                 instagram=False
-                                                            )
+                                                            ).model_dump()
     state_ref["campaign_summary"] = None
     state_ref["user_intent_summary"] = None
     state_ref["content_output_summary"] = None
     
     
     
+#  Two issues 1) agent engine
+# 2) frontend not displaying all the events
