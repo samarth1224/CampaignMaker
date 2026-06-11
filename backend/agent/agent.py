@@ -1,5 +1,5 @@
 import asyncio
-from google.adk.agents import LlmAgent, SequentialAgent, LoopAgent
+from google.adk.agents import LlmAgent, LoopAgent
 from google.adk.tools import AgentTool
 
 from agent.callbacks.ContentGenerator.after_agent_callabacks import save_to_file
@@ -15,7 +15,7 @@ from agent.prompts.ContentGenerator.twitter import prompt_twitter_content_genera
 from agent.prompts.media_generation_tools import prompt_svg_graphic_generator 
 
 # Schemas
-from agent.schemas.CampaignMaker.CamaignMaker import CampaignStrategy
+from agent.schemas.CampaignMaker.CampaignMaker import CampaignStrategy
 from agent.schemas.CampaignMaker.StrategyReviewer import StrategyReview
 from agent.schemas.ContentGenerator.ContentGenerator import PostContent,BasePost
 
