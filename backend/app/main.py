@@ -1,14 +1,30 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.database import init_db
+from app.router.auth import router as auth_router
+from app.router.user import router as user_router
+from app.router.agent import router as agent_router
+
+
+# ── Lifespan — runs DB init on startup ───────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()
+    yield
+
 
 app = FastAPI(
-    title="ADK Server",
-    description="API for the Agent Development Kit",
-    version="1.0.0"
+    title="CampaignMaker API",
+    description="API for the CampaignMaker AI Agent",
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
-# Optional: Add CORS middleware if you need to access this from a frontend
+# CORS middleware for frontend access
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,6 +33,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Mount routers ────────────────────────────────────────────────────────────
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(user_router, prefix="/api/v1")
+app.include_router(agent_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["System"])

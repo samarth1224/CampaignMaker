@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.models.usermodel import User
+from app.models.campaign import Campaign, ChatMessage
 from app.utility.dependencies import verify_user_access_token
 from app.utility.event_parser import parse_event
 
@@ -53,9 +54,10 @@ def _sse_error(message: str) -> str:
     return _sse_encode({"type": "error", "author": "system", "data": {"error_message": message}})
 
 
-def _sse_done() -> str:
-    """Send a final ``[DONE]`` sentinel so the client knows to close."""
-    return "data: [DONE]\n\n"
+def _sse_done(campaign_id: str) -> str:
+    """Send a final ``[DONE]`` sentinel with the campaign_id so the client
+    knows to close and can reference the campaign later."""
+    return _sse_encode({"type": "done", "author": "system", "data": {"campaign_id": campaign_id}})
 
 
 # ─── Core SSE generator ─────────────────────────────────────────────────────
@@ -69,21 +71,40 @@ async def _event_stream(
     """Async generator that drives the ADK agent and yields SSE frames.
 
     1. Creates (or reuses) a session via the runner.
-    2. Calls ``call_agent_async`` which yields raw ADK ``Event`` objects.
-    3. Each event is passed through ``parse_event`` (the utility layer)
+    2. Persists the user message to the Campaign document.
+    3. Calls ``call_agent_async`` which yields raw ADK ``Event`` objects.
+    4. Each event is passed through ``parse_event`` (the utility layer)
        to produce a clean, frontend-friendly JSON dict.
-    4. Events that ``parse_event`` returns ``None`` for are silently
-       skipped — the frontend never sees internal ADK bookkeeping.
-    5. A ``[DONE]`` sentinel is sent at the end.
+    5. Final text responses from the agent are also persisted.
+    6. A ``done`` event is sent at the end.
     """
-    # ── 1. Ensure session exists ──────────────────────────────────────
+    campaign_uuid = uuid.UUID(campaign_id)
+    user_uuid = uuid.UUID(user_id)
+
+    # ── 1. Ensure ADK session exists ──────────────────────────────────
     try:
         await create_session(user_id=user_id, campaign_id=campaign_id)
     except Exception as exc:
         logger.warning("Session creation failed (may already exist): %s", exc)
-        # Swallow — the session might already exist from a prior turn.
 
-    # ── 2. Stream agent events ────────────────────────────────────────
+    # ── 2. Ensure Campaign document exists & save user message ────────
+    campaign = await Campaign.find_one(Campaign.campaign_id == campaign_uuid)
+    if not campaign:
+        campaign = Campaign(
+            campaign_id=campaign_uuid,
+            user_id=user_uuid,
+            title=prompt[:80],
+            status="generating",
+        )
+        await campaign.insert()
+
+    # Persist the user's message
+    campaign.messages.append(ChatMessage(role="user", content=prompt))
+    campaign.status = "generating"
+    await campaign.save()
+
+    # ── 3. Stream agent events ────────────────────────────────────────
+    assistant_text_parts: list[str] = []
     try:
         async for event in call_agent_async(
             prompt=prompt,
@@ -94,16 +115,34 @@ async def _event_stream(
             parsed = parse_event(event)
             if parsed is not None:
                 yield _sse_encode(parsed)
+
+                # Accumulate text for the final assistant message
+                if parsed["type"] in ("text", "text_chunk", "final_response"):
+                    text = parsed["data"].get("text", "")
+                    if text:
+                        assistant_text_parts.append(text)
     except RuntimeError as exc:
-        # call_agent_async raises RuntimeError on escalation.
         logger.error("Agent escalation: %s", exc)
         yield _sse_error(str(exc))
+        campaign.status = "failed"
+        await campaign.save()
     except Exception as exc:
         logger.exception("Unexpected error during agent run")
         yield _sse_error(f"Internal error: {exc}")
+        campaign.status = "failed"
+        await campaign.save()
 
-    # ── 3. Signal completion ──────────────────────────────────────────
-    yield _sse_done()
+    # ── 4. Persist assistant reply & mark complete ────────────────────
+    if assistant_text_parts:
+        full_reply = "".join(assistant_text_parts)
+        campaign.messages.append(
+            ChatMessage(role="assistant", content=full_reply)
+        )
+    campaign.status = "completed"
+    await campaign.save()
+
+    # ── 5. Signal completion ──────────────────────────────────────────
+    yield _sse_done(campaign_id)
 
 
 # ─── Route ───────────────────────────────────────────────────────────────────
@@ -122,7 +161,7 @@ async def run_agent(
 
     **Response**: ``text/event-stream`` — each frame is a JSON object
     with ``type``, ``author``, and ``data`` keys.  The stream ends with
-    a ``data: [DONE]`` sentinel.
+    a ``done`` event containing the ``campaign_id``.
     """
     campaign_id = body.campaign_id or str(uuid.uuid4())
 
