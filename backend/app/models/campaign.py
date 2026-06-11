@@ -16,7 +16,7 @@ from beanie import Document
 from pydantic import BaseModel, Field
 
 # ── Re-use agent schemas as embedded sub-documents ───────────────────────────
-from agent.schemas.CampaignMaker.CamaignMaker import CampaignStrategy
+from agent.schemas.CampaignMaker.CampaignMaker import CampaignStrategy
 from agent.schemas.ContentGenerator.ContentGenerator import PostContent, BasePost
 
 
