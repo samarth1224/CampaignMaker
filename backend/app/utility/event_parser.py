@@ -59,6 +59,32 @@ def parse_event(event: Event) -> dict[str, Any] | None:
             },
         )
 
+    # ── Text content FIRST (streaming or complete) ────────────────────
+    # Check text BEFORE function calls/state so we don't lose model text
+    # that arrives on the same event.
+    if event.content and event.content.parts:
+        text = _extract_text(event)
+        if text is not None:
+            is_partial = getattr(event, "partial", False) or False
+            is_final = (
+                hasattr(event, "is_final_response")
+                and callable(event.is_final_response)
+                and event.is_final_response()
+            )
+
+            if is_final:
+                event_type = "final_response"
+            elif is_partial:
+                event_type = "text_chunk"
+            else:
+                event_type = "text"
+
+            return _build(
+                event_type,
+                author,
+                {"text": text, "partial": is_partial},
+            )
+
     # ── Tool call requests ────────────────────────────────────────────
     function_calls = event.get_function_calls()
     if function_calls:
@@ -108,30 +134,6 @@ def parse_event(event: Event) -> dict[str, Any] | None:
         if has_artifact:
             payload["artifact_delta"] = dict(event.actions.artifact_delta)
         return _build("state_update", author, payload)
-
-    # ── Text content (streaming or complete) ──────────────────────────
-    if event.content and event.content.parts:
-        text = _extract_text(event)
-        if text is not None:
-            is_partial = getattr(event, "partial", False) or False
-            is_final = (
-                hasattr(event, "is_final_response")
-                and callable(event.is_final_response)
-                and event.is_final_response()
-            )
-
-            if is_final:
-                event_type = "final_response"
-            elif is_partial:
-                event_type = "text_chunk"
-            else:
-                event_type = "text"
-
-            return _build(
-                event_type,
-                author,
-                {"text": text, "partial": is_partial},
-            )
 
     # Event doesn't carry anything the frontend needs to see.
     return None

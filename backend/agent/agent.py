@@ -56,16 +56,16 @@ svg_graphic_generator = LlmAgent(
     instruction=prompt_svg_graphic_generator,
     description="Generates an SVG illustration for a post.",
     output_key = "post_content",
-    after_agent_callback = [save_to_file]
+    after_agent_callback = [save_to_file],
 )
 
 twitter_post_text_generator = LlmAgent(
-    name="post_text_generator",
+    name="twitter_post_text_generator",
     model="gemini-3.1-flash-lite",
     instruction=prompt_twitter_post_text_generator,
     description="Generates the text content for a post.",
     output_key = "twitter_posts_text",
-    output_schema = PostCollection
+    output_schema = PostCollection,
 )
 
 twitter_content_generator = LlmAgent(
@@ -75,8 +75,7 @@ twitter_content_generator = LlmAgent(
     description = "Generates outline for twitter posts and orchestrates text and svg generation.",
     output_key = "twitter_posts",
     output_schema = GeneratedPostSummary,
-    tools = [AgentTool(agent = twitter_post_text_generator),
-     AgentTool(agent = svg_graphic_generator)]
+    sub_agents = [twitter_post_text_generator,svg_graphic_generator]
 
 )
 
@@ -94,7 +93,6 @@ instagram_content_generator = LlmAgent(
     model = "gemini-3.1-flash-lite",
     instruction = prompt_twitter_content_generator,
     description = "Generates outline for instagram posts and orchestrates text and svg generation.",
-    sub_agents=[twitter_post_text_generator, svg_graphic_generator],
     output_key = "instagram_posts",
     output_schema = GeneratedPostSummary
 )

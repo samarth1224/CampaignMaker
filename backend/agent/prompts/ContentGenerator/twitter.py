@@ -23,7 +23,9 @@ svg_graphic_generator = Generate an SVG illustration for a Twitter post.
     which will return all the post text generated.
 4) Now for every post that needs an illustration, call the svg_graphic_generator agent 
     to generate the SVG illustration for the tweets/posts based on the output generated in by twitter_post_text_generator agent. 
-5) Final Output must be formatted strictly as a JSON object matching the BasePost schema:
+5) Final Output must be formatted strictly as a JSON object matching the  schema:
+Use the following Schema:
+
 {
   "name": "Campaign Post Set",
   "platform": "twitter",
@@ -33,9 +35,29 @@ svg_graphic_generator = Generate an SVG illustration for a Twitter post.
 ### CONSTRAINTS:
 1) No of Post = {MAX_POSTS}.
 2) Output MUST be raw JSON only, no markdown wrapping or text before/after.
+3) IMPORTANT: DO NOT output the generated posts themselves. You MUST ONLY output the GeneratedPostSummary JSON with "name", "platform", and "summary".
 """
-prompt_twitter_post_text_generator = """Generate the text content for a Twitter post.
-Keep it engaging, concise, and within the character limit.
+prompt_twitter_post_text_generator = """You are a Twitter post text generator expert.
+Your job is to take the instructions or outline provided and generate the high-quality, engaging, and concise post texts.
+
+### Responsibilities:
+1) Carefully read the provided outline or instructions for the posts.
+2) Generate the final post text for each post. Make sure the texts are highly engaging, optimized for Twitter, and within character limits (max 280 characters).
+3) Output MUST conform strictly to the PostCollection JSON schema. Do not output any markdown code blocks or wrapper text, just the raw JSON.
+
+### JSON Schema Structure:
+{
+  "platform": "twitter",
+  "posts": [
+    {
+      "name": "Unique short name for this post (e.g. post_1)",
+      "platform": "twitter",
+      "post_text": "The actual text of the tweet",
+      "has_media": true/false (set to true if this post needs/has an SVG illustration/graphic, otherwise false),
+      "media_name": "filename of the SVG if has_media is true, e.g. vector_1.svg, otherwise null"
+    }
+  ]
+}
 """
 
 

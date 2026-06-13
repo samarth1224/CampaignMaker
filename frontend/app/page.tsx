@@ -1,4 +1,11 @@
+"use client";
+
+import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
+
 export default function Home() {
+  const { user, loading, logout } = useAuth();
+
   return (
     <div className="min-h-screen flex flex-col overflow-x-hidden relative">
       {/* Background Shapes */}
@@ -24,11 +31,31 @@ export default function Home() {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
         </nav>
         <div className="flex items-center gap-6">
-          <a href="#" className="text-[15px] font-medium hover:opacity-70 transition-opacity">Log in</a>
-          <button className="bg-[#1E2A24] text-white px-6 py-3 rounded-full text-[15px] font-medium flex items-center gap-2 hover:bg-[#2a3a31] hover:-translate-y-[1px] transition-all">
-            Get Started
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
-          </button>
+          {!loading && user ? (
+            <>
+              <span className="text-[15px] font-medium text-[#1E2A24]">
+                Hello, {user.is_guest ? "Guest" : user.username}
+              </span>
+              <button
+                onClick={() => logout()}
+                className="text-[15px] font-medium hover:opacity-70 transition-opacity"
+              >
+                Log out
+              </button>
+              <Link href="/home" className="bg-[#1E2A24] text-white px-6 py-3 rounded-full text-[15px] font-medium flex items-center gap-2 hover:bg-[#2a3a31] hover:-translate-y-[1px] transition-all">
+                Dashboard
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/auth/login" className="text-[15px] font-medium hover:opacity-70 transition-opacity">Log in</Link>
+              <Link href="/auth/signup" className="bg-[#1E2A24] text-white px-6 py-3 rounded-full text-[15px] font-medium flex items-center gap-2 hover:bg-[#2a3a31] hover:-translate-y-[1px] transition-all">
+                Get Started
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+              </Link>
+            </>
+          )}
         </div>
       </header>
 
@@ -45,10 +72,10 @@ export default function Home() {
               CampaignMaker AI helps you create, optimize, and launch high-performing campaigns in minutes.
             </p>
             <div className="flex flex-row gap-4 mb-12 justify-center">
-              <button className="bg-[#1E2A24] text-white px-8 py-4 rounded-full text-base font-medium flex items-center gap-2 hover:-translate-y-0.5 hover:shadow-[0_10px_25px_rgba(30,42,36,0.2)] transition-all">
+              <Link href={user ? "/home" : "/auth/signup"} className="bg-[#1E2A24] text-white px-8 py-4 rounded-full text-base font-medium flex items-center gap-2 hover:-translate-y-0.5 hover:shadow-[0_10px_25px_rgba(30,42,36,0.2)] transition-all">
                 Start Creating
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
-              </button>
+              </Link>
               {/* <button className="bg-transparent text-[#1E2A24] px-8 py-4 rounded-full text-base font-medium border border-[#dcd7ce] hover:border-[#1E2A24] hover:bg-black/5 transition-all">
                 Explore Templates
               </button> */}

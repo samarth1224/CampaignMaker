@@ -7,6 +7,7 @@ from app.database import init_db
 from app.router.auth import router as auth_router
 from app.router.user import router as user_router
 from app.router.agent import router as agent_router
+from app.router.campaign import router as campaign_router
 
 
 # ── Lifespan — runs DB init on startup ───────────────────────────────────────
@@ -37,6 +38,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(user_router)
 app.include_router(agent_router)
+app.include_router(campaign_router)
 
 
 @app.get("/health", tags=["System"])

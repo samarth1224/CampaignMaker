@@ -86,12 +86,11 @@ async def call_agent_async(
         new_message=content,
     ):
         if event.actions and event.actions.escalate:
-            error_msg = (
-                event.error_message or "No specific message provided."
-            )
-            raise RuntimeError(
-                f"Agent escalated with error: {error_msg}"
-            )
+            if event.error_message:
+                raise RuntimeError(
+                    f"Agent escalated with error: {event.error_message}"
+                )
+           
 
         yield event
        

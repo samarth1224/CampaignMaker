@@ -119,6 +119,7 @@ async def _event_stream(
 
     # ── 4. Stream agent events ────────────────────────────────────────
     assistant_text_parts: list[str] = []
+    accumulated_state: dict = {}
     try:
         async for event in call_agent_async(
             prompt=prompt,
@@ -135,6 +136,11 @@ async def _event_stream(
                     text = parsed["data"].get("text", "")
                     if text:
                         assistant_text_parts.append(text)
+
+                # Accumulate state deltas for campaign persistence
+                if parsed["type"] == "state_update" and "state_delta" in parsed["data"]:
+                    accumulated_state.update(parsed["data"]["state_delta"])
+
     except RuntimeError as exc:
         logger.error("Agent escalation: %s", exc)
         yield _sse_error(str(exc))
@@ -146,13 +152,73 @@ async def _event_stream(
         campaign.status = "failed"
         await campaign.save()
 
-    # ── 5. Persist assistant reply & mark complete ────────────────────
+    # ── 5. Persist assistant reply, strategy, content & mark complete ──
     if assistant_text_parts:
         full_reply = "".join(assistant_text_parts)
         conversation.messages.append(
             ChatMessage(role="assistant", content=full_reply)
         )
     await conversation.save()
+
+    # Persist campaign strategy from agent state
+    # The key is "campaign_outline" matching campaign_outline_generator's output_key
+    if "campaign_outline" in accumulated_state:
+        try:
+            from agent.schemas.CampaignMaker.CampaignMaker import CampaignStrategy
+            strategy_data = accumulated_state["campaign_outline"]
+            if isinstance(strategy_data, dict):
+                campaign.strategy = CampaignStrategy(**strategy_data)
+            else:
+                campaign.strategy = strategy_data
+        except Exception as exc:
+            logger.warning("Failed to persist campaign strategy: %s", exc)
+
+    # Persist generated content per platform
+    from agent.schemas.ContentGenerator.ContentGenerator import PostContent, PostCollection
+    from app.models.campaign import PlatformContent
+
+    # Check for twitter content
+    for platform_key, platform_name in [
+        ("twitter_posts_text", "twitter"),
+        ("linkedin_posts_text", "linkedin"),
+        ("instagram_posts_text", "instagram"),
+    ]:
+        if platform_key in accumulated_state:
+            try:
+                posts_data = accumulated_state[platform_key]
+                if isinstance(posts_data, dict):
+                    posts = PostCollection(**posts_data)
+                else:
+                    posts = posts_data
+
+                # Find or create platform content entry
+                pc = next((p for p in campaign.content if p.platform == platform_name), None)
+                if not pc:
+                    pc = PlatformContent(platform=platform_name)
+                    campaign.content.append(pc)
+                pc.posts = posts
+            except Exception as exc:
+                logger.warning("Failed to persist %s content: %s", platform_name, exc)
+
+    # Check for generated media / SVG content
+    if "post_content" in accumulated_state:
+        try:
+            media_data = accumulated_state["post_content"]
+            if isinstance(media_data, str):
+                import json as _json
+                media_data = _json.loads(media_data)
+            if isinstance(media_data, dict):
+                media = PostContent(**media_data)
+                # Add to the most recent platform content or twitter by default
+                platform = accumulated_state.get("current_platform", "twitter")
+                pc = next((p for p in campaign.content if p.platform == platform), None)
+                if not pc:
+                    pc = PlatformContent(platform=platform)
+                    campaign.content.append(pc)
+                pc.media.append(media)
+        except Exception as exc:
+            logger.warning("Failed to persist media content: %s", exc)
+
     campaign.status = "completed"
     await campaign.save()
 
