@@ -4,6 +4,7 @@
 Create Social Media Campaigns with single prompt. Fastapi, Next.js, ChromaDB, MongoDB, Google Agent Development Kit.
 
 ##  Multi-Agent Orchestration
+<img width="529" height="400" alt="image" src="https://github.com/user-attachments/assets/bd33ceb1-d2c5-405f-b2b3-1a9263e1c7a0" />
 
 The core strength of CampaignMaker lies in its multi-agent system, where specialized AI agents collaborate to deliver a cohesive marketing campaign.
 
