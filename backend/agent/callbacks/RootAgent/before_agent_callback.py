@@ -15,9 +15,12 @@ def initialize_state(callback_context: CallbackContext):
                                                                 linkedin=False,
                                                                 instagram=False
                                                             ).model_dump()
-    state_ref["campaign_summary"] = None
-    state_ref["user_intent_summary"] = None
-    state_ref["content_output_summary"] = None
+    if state_ref.get("campaign_summary") is None:
+        state_ref["campaign_summary"] = None
+    if state_ref.get("user_intent_summary") is None:
+        state_ref["user_intent_summary"] = None
+    if state_ref.get("content_output_summary") is None:
+        state_ref["content_output_summary"] = None
     
     
     

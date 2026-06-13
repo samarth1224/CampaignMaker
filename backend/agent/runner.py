@@ -45,7 +45,7 @@ async def create_session(user_id, campaign_id) -> Session:
 
     Args:
         user_id: The public UUID of the requesting user.
-        story_id: A unique UUID for the new story.
+        campaign_id: A unique UUID for the new campaign.
 
     Returns:
         The newly created :class:`Session` instance.

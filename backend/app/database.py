@@ -6,6 +6,7 @@ from pymongo import AsyncMongoClient
 from app import config
 from app.models.usermodel import User
 from app.models.campaign import Campaign
+from app.models.chat_message import Conversation
 
 
 async def init_db() -> None:
@@ -16,5 +17,6 @@ async def init_db() -> None:
     client = AsyncMongoClient(config.MONGO_URI)
     await init_beanie(
         database=client[config.MONGO_DB_NAME],
-        document_models=[User, Campaign],
+        document_models=[User, Campaign, Conversation],
     )
+

@@ -23,7 +23,7 @@ svg_graphic_generator = Generate an SVG illustration for a Twitter post.
     which will return all the post text generated.
 4) Now for every post that needs an illustration, call the svg_graphic_generator agent 
     to generate the SVG illustration for the tweets/posts based on the output generated in by twitter_post_text_generator agent. 
-5)Final Output must be formatted strictly as a JSON object matching the BasePost schema:
+5) Final Output must be formatted strictly as a JSON object matching the BasePost schema:
 {
   "name": "Campaign Post Set",
   "platform": "twitter",
@@ -33,8 +33,6 @@ svg_graphic_generator = Generate an SVG illustration for a Twitter post.
 ### CONSTRAINTS:
 1) No of Post = {MAX_POSTS}.
 2) Output MUST be raw JSON only, no markdown wrapping or text before/after.
-
-
 """
 prompt_twitter_post_text_generator = """Generate the text content for a Twitter post.
 Keep it engaging, concise, and within the character limit.

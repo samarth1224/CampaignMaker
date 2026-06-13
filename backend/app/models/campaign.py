@@ -4,6 +4,10 @@ The ``Campaign`` document is the aggregate root for everything related
 to a single campaign run.  Agent-produced schemas (like
 ``CampaignStrategy``) are embedded directly so there is zero field
 duplication between the agent layer and the persistence layer.
+
+Chat messages are stored in a separate ``chat_messages`` collection
+(see ``chat_message.py``) to avoid document bloat and enable efficient
+pagination.
 """
 
 from __future__ import annotations
@@ -17,20 +21,7 @@ from pydantic import BaseModel, Field
 
 # ── Re-use agent schemas as embedded sub-documents ───────────────────────────
 from agent.schemas.CampaignMaker.CampaignMaker import CampaignStrategy
-from agent.schemas.ContentGenerator.ContentGenerator import PostContent, BasePost
-
-
-# ─── Chat history ────────────────────────────────────────────────────────────
-
-class ChatMessage(BaseModel):
-    """A single message in the campaign conversation."""
-
-    role: Literal["user", "assistant"] = "user"
-    content: str = ""
-    author: str | None = None
-    timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+from agent.schemas.ContentGenerator.ContentGenerator import PostContent, PostCollection
 
 
 # ─── Generated content per platform ─────────────────────────────────────────
@@ -39,7 +30,7 @@ class PlatformContent(BaseModel):
     """Content generated for a single platform (e.g. Twitter)."""
 
     platform: str = ""
-    posts: List[BasePost] = Field(default_factory=list)
+    posts: PostCollection = Field(default_factory=list)
     media: List[PostContent] = Field(default_factory=list)
 
 
@@ -58,9 +49,6 @@ class Campaign(Document):
 
     # Generated content, grouped by platform
     content: List[PlatformContent] = Field(default_factory=list)
-
-    # Full chat history for the session
-    messages: List[ChatMessage] = Field(default_factory=list)
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
@@ -84,6 +72,5 @@ class CampaignPublic(BaseModel):
     title: str
     status: str
     strategy: Optional[CampaignStrategy] = None
-    messages: List[ChatMessage] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

@@ -17,10 +17,9 @@ from agent.prompts.media_generation_tools import prompt_svg_graphic_generator
 # Schemas
 from agent.schemas.CampaignMaker.CampaignMaker import CampaignStrategy
 from agent.schemas.CampaignMaker.StrategyReviewer import StrategyReview
-from agent.schemas.ContentGenerator.ContentGenerator import PostContent,BasePost
+from agent.schemas.ContentGenerator.ContentGenerator import PostContent,GeneratedPostSummary,PostCollection
 
 from agent.agents.content_generator import ContentGenerator
-
 
 # Instantiate the agents
 campaign_outline_generator = LlmAgent(
@@ -40,7 +39,7 @@ campaign_outline_reviewer = LlmAgent(
     tools = [exit_loop],
     output_key = "review",
     output_schema = StrategyReview,
-    after_agent_callback = [check_loop_exit]
+    # after_agent_callback = [check_loop_exit]
 )
 
 # Campaign Maker (Loop non-LLM agent)
@@ -57,7 +56,6 @@ svg_graphic_generator = LlmAgent(
     instruction=prompt_svg_graphic_generator,
     description="Generates an SVG illustration for a post.",
     output_key = "post_content",
-    output_schema = PostContent,
     after_agent_callback = [save_to_file]
 )
 
@@ -66,7 +64,8 @@ twitter_post_text_generator = LlmAgent(
     model="gemini-3.1-flash-lite",
     instruction=prompt_twitter_post_text_generator,
     description="Generates the text content for a post.",
-    output_key = "twitter_posts_text"
+    output_key = "twitter_posts_text",
+    output_schema = PostCollection
 )
 
 twitter_content_generator = LlmAgent(
@@ -75,7 +74,10 @@ twitter_content_generator = LlmAgent(
     instruction = prompt_twitter_content_generator,
     description = "Generates outline for twitter posts and orchestrates text and svg generation.",
     output_key = "twitter_posts",
-    output_schema = BasePost
+    output_schema = GeneratedPostSummary,
+    tools = [AgentTool(agent = twitter_post_text_generator),
+     AgentTool(agent = svg_graphic_generator)]
+
 )
 
 linkedin_content_generator = LlmAgent(
@@ -84,7 +86,7 @@ linkedin_content_generator = LlmAgent(
     instruction = prompt_twitter_content_generator,
     description = "Generates outline for linkedin posts and orchestrates text and svg generation.",
     output_key = "linkedin_posts",
-    output_schema = BasePost
+    output_schema = GeneratedPostSummary
 )
 
 instagram_content_generator = LlmAgent(
@@ -94,7 +96,7 @@ instagram_content_generator = LlmAgent(
     description = "Generates outline for instagram posts and orchestrates text and svg generation.",
     sub_agents=[twitter_post_text_generator, svg_graphic_generator],
     output_key = "instagram_posts",
-    output_schema = BasePost
+    output_schema = GeneratedPostSummary
 )
 
 

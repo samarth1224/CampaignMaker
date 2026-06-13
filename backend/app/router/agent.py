@@ -12,7 +12,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.models.usermodel import User
-from app.models.campaign import Campaign, ChatMessage
+from app.models.campaign import Campaign
+from app.models.chat_message import Conversation, ChatMessage
 from app.utility.dependencies import verify_user_access_token
 from app.utility.event_parser import parse_event
 
@@ -71,7 +72,7 @@ async def _event_stream(
     """Async generator that drives the ADK agent and yields SSE frames.
 
     1. Creates (or reuses) a session via the runner.
-    2. Persists the user message to the Campaign document.
+    2. Persists the user message to the Conversation document.
     3. Calls ``call_agent_async`` which yields raw ADK ``Event`` objects.
     4. Each event is passed through ``parse_event`` (the utility layer)
        to produce a clean, frontend-friendly JSON dict.
@@ -87,7 +88,7 @@ async def _event_stream(
     except Exception as exc:
         logger.warning("Session creation failed (may already exist): %s", exc)
 
-    # ── 2. Ensure Campaign document exists & save user message ────────
+    # ── 2. Ensure Campaign document exists ────────────────────────────
     campaign = await Campaign.find_one(Campaign.campaign_id == campaign_uuid)
     if not campaign:
         campaign = Campaign(
@@ -98,12 +99,25 @@ async def _event_stream(
         )
         await campaign.insert()
 
+    # ── 3. Get or create Conversation for this campaign ───────────────
+    conversation = await Conversation.find_one(
+        Conversation.campaign_id == campaign_uuid
+    )
+    if not conversation:
+        conversation = Conversation(
+            campaign_id=campaign_uuid,
+            user_id=user_uuid,
+            title=prompt[:80],
+        )
+        await conversation.insert()
+
     # Persist the user's message
-    campaign.messages.append(ChatMessage(role="user", content=prompt))
+    conversation.messages.append(ChatMessage(role="user", content=prompt))
     campaign.status = "generating"
+    await conversation.save()
     await campaign.save()
 
-    # ── 3. Stream agent events ────────────────────────────────────────
+    # ── 4. Stream agent events ────────────────────────────────────────
     assistant_text_parts: list[str] = []
     try:
         async for event in call_agent_async(
@@ -132,16 +146,17 @@ async def _event_stream(
         campaign.status = "failed"
         await campaign.save()
 
-    # ── 4. Persist assistant reply & mark complete ────────────────────
+    # ── 5. Persist assistant reply & mark complete ────────────────────
     if assistant_text_parts:
         full_reply = "".join(assistant_text_parts)
-        campaign.messages.append(
+        conversation.messages.append(
             ChatMessage(role="assistant", content=full_reply)
         )
+    await conversation.save()
     campaign.status = "completed"
     await campaign.save()
 
-    # ── 5. Signal completion ──────────────────────────────────────────
+    # ── 6. Signal completion ──────────────────────────────────────────
     yield _sse_done(campaign_id)
 
 
@@ -178,3 +193,4 @@ async def run_agent(
             "X-Accel-Buffering": "no",  # Disable nginx buffering
         },
     )
+
