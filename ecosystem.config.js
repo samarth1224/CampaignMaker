@@ -4,7 +4,7 @@ module.exports = {
       name: "campaignmaker-backend",
       cwd: "./backend",
       script: ".venv/bin/uvicorn",
-      args: "app.main:app --host 0.0.0.0 --port 8000",
+      args: "app.main:app --host 0.0.0.0 --port 24000",
       interpreter: "none",
       env: {
         NODE_ENV: "production",
@@ -17,7 +17,7 @@ module.exports = {
       args: "start",
       env: {
         NODE_ENV: "production",
-        PORT: 3000
+        PORT: 14000
       }
     }
   ]
