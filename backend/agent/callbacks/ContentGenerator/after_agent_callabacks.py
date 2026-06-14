@@ -6,7 +6,8 @@ from agent.schemas.ContentGenerator.ContentGenerator import PostContent
 def save_to_file(callback_context: CallbackContext):
     """
     Callback function executed after an agent generates post media.
-    Validates the media object and saves it as an SVG file.
+    Validates the media object. We no longer save to the local disk or S3,
+    as the SVG code is stored directly in MongoDB and rendered by the frontend.
     """
     post_content = callback_context.state.get('post_content')
     if not post_content:
@@ -42,5 +43,5 @@ def save_to_file(callback_context: CallbackContext):
     if not parsed_content:
         return
     
-    with open(f"{parsed_content.media_name}.svg", 'w') as svg_file:
-        svg_file.write(parsed_content.svg_code)
+    # We optionally update the state with the cleaned/validated object
+    callback_context.state['post_content'] = parsed_content

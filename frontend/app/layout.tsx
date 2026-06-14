@@ -30,6 +30,9 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        <div className="w-full bg-[#E26A4A] text-white text-center py-2 px-4 text-sm font-medium shadow-sm z-50">
+          🚧 This website is under construction. Some features might not work as expected. 🚧
+        </div>
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
