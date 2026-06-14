@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="128" fill="#1E2A24" />
+  <!-- Letter C -->
+  <path d="M 360 180 C 320 120 200 120 160 200 C 120 280 160 400 256 400 C 300 400 340 360 360 320" 
+        fill="none" stroke="#F6F4EB" stroke-width="48" stroke-linecap="round" />
+  <!-- AI Sparkle 1 -->
+  <path d="M 360 100 Q 360 160 300 160 Q 360 160 360 220 Q 360 160 420 160 Q 360 160 360 100" 
+        fill="#E26A4A" />
+  <!-- AI Sparkle 2 -->
+  <path d="M 440 280 Q 440 310 410 310 Q 440 310 440 340 Q 440 310 470 310 Q 440 310 440 280" 
+        fill="#E26A4A" opacity="0.8" />
+</svg>
