@@ -24,8 +24,8 @@ def _build_token_response(access_token: str) -> JSONResponse:
         key="access_token",
         value=access_token,
         httponly=True,
-        samesite="none",
-        secure=True,  # Set to True in production with HTTPS
+        samesite="none" if config.SECURE_COOKIES else "lax",
+        secure=config.SECURE_COOKIES,
         max_age=config.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
     )
@@ -126,8 +126,8 @@ async def logout() -> JSONResponse:
     response.delete_cookie(
         key="access_token",
         httponly=True,
-        samesite="lax",
-        secure=False,  # Match the flags used when setting the cookie
+        samesite="none" if config.SECURE_COOKIES else "lax",
+        secure=config.SECURE_COOKIES,
         path="/",
     )
     return response
