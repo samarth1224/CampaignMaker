@@ -20,9 +20,12 @@ const PLATFORM_COLORS: Record<string, string> = {
 
 export default function PostsTab({ content }: Props) {
     const platforms = content.map((c) => c.platform);
-    const [activePlatform, setActivePlatform] = useState<string>(
-        platforms[0] ?? ""
-    );
+    const [selectedPlatform, setSelectedPlatform] = useState<string>("");
+
+    const activePlatform =
+        selectedPlatform && platforms.includes(selectedPlatform)
+            ? selectedPlatform
+            : (platforms[0] ?? "");
 
     if (content.length === 0) {
         return (
@@ -58,12 +61,11 @@ export default function PostsTab({ content }: Props) {
                 {platforms.map((platform) => (
                     <button
                         key={platform}
-                        onClick={() => setActivePlatform(platform)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                            activePlatform === platform
+                        onClick={() => setSelectedPlatform(platform)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${activePlatform === platform
                                 ? `${PLATFORM_COLORS[platform] ?? "bg-[#1E2A24] text-white"} shadow-sm`
                                 : "bg-white text-[#6B726F] border border-[#EBE7DC] hover:border-[#C4C0B4]"
-                        }`}
+                            }`}
                     >
                         <span className="text-sm leading-none">
                             {PLATFORM_ICONS[platform] ?? "●"}
@@ -89,10 +91,9 @@ export default function PostsTab({ content }: Props) {
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-2">
                                     <span
-                                        className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                                            PLATFORM_COLORS[post.platform] ??
+                                        className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${PLATFORM_COLORS[post.platform] ??
                                             "bg-gray-200 text-gray-600"
-                                        }`}
+                                            }`}
                                     >
                                         {PLATFORM_ICONS[post.platform] ?? "●"}
                                     </span>
