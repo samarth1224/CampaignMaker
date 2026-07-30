@@ -2,6 +2,9 @@
 
 import { useEffect, useRef } from "react";
 
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
 interface Message {
     id: string;
     role: "user" | "assistant";
@@ -67,7 +70,9 @@ export default function ChatDisplay({ messages, isStreaming }: ChatDisplayProps)
                                 </div>
                                 <div className={`px-5 py-3.5 rounded-2xl max-w-[80%] ${msg.role === "user" ? "bg-[#1E2A24] text-white rounded-tr-sm" : "bg-white border border-[#EBE7DC] text-[#1E2A24] rounded-tl-sm shadow-sm"}`}>
                                     {msg.content ? (
-                                        <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                                        <div className="text-[15px] leading-relaxed prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0">
+                                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                                        </div>
                                     ) : (
                                         // Typing indicator for empty assistant messages (streaming)
                                         msg.role === "assistant" && isStreaming && (

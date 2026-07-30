@@ -1,216 +1,219 @@
 "use client";
-import { useState, useRef, useCallback, useEffect } from "react";
-import ChatDisplay from "./ChatDisplay";
-import ChatInput from "./ChatInput";
-import { runAgent, AgentEvent } from "@/lib/agent";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { type AgentEvent, runAgent } from "@/lib/agent";
 import { useCampaign } from "@/lib/campaign-context";
 
+import ChatDisplay from "./ChatDisplay";
+import ChatInput from "./ChatInput";
+
 interface Message {
-    id: string;
-    role: "user" | "assistant";
-    content: string;
-    /** Optional metadata for non-text events shown in chat */
-    eventType?: string;
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  eventType?: string;
 }
 
 export default function ChatContainer() {
-    const [messages, setMessages] = useState<Message[]>([]);
-    const [isStreaming, setIsStreaming] = useState(false);
-    const abortRef = useRef<AbortController | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const {
+    campaignId,
+    setCampaignId,
+    campaign,
+    fetchCampaign,
+    fetchCampaignList,
+  } = useCampaign();
 
-    const {
-        campaignId,
-        setCampaignId,
-        campaign,
-        fetchCampaign,
-        fetchCampaignList,
-    } = useCampaign();
+  useEffect(() => {
+    if (!campaign) {
+      setMessages([]);
+    } else if (!isStreaming) {
+      setMessages(
+        (campaign.messages ?? []).map((message, index) => ({
+          id: `history-${index}`,
+          role: message.role,
+          content: message.content,
+        })),
+      );
+    }
+  }, [campaign, isStreaming]);
 
-    // Sync messages with the active campaign
-    useEffect(() => {
-        if (!campaign) {
-            setMessages([]);
-        } else if (campaign.messages && !isStreaming) {
-            setMessages(
-                campaign.messages.map((m, i) => ({
-                    id: `history-${i}`,
-                    role: m.role,
-                    content: m.content,
-                }))
-            );
-        }
-    }, [campaign, isStreaming]);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
-    /** Append a new assistant-role message to the chat */
-    const appendAssistantMessage = useCallback(
-        (content: string, eventType?: string) => {
-            const msg: Message = {
-                id: (Date.now() + Math.random()).toString(),
-                role: "assistant",
-                content,
-                eventType,
-            };
-            setMessages((prev) => [...prev, msg]);
-        },
-        []
+  const appendAssistantMessage = useCallback(
+    (content: string, eventType?: string) => {
+      setMessages((current) => [
+        ...current,
+        { id: createMessageId("event"), role: "assistant", content, eventType },
+      ]);
+    },
+    [],
+  );
+
+  const updateAssistantMessage = useCallback((id: string, content: string) => {
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === id ? { ...message, content } : message,
+      ),
     );
+  }, []);
 
-    /** Update the latest message with the given assistantId */
-    const updateAssistantMessage = useCallback(
-        (assistantId: string, content: string) => {
-            setMessages((prev) =>
-                prev.map((m) =>
-                    m.id === assistantId ? { ...m, content } : m
-                )
-            );
-        },
-        []
+  const appendAssistantText = useCallback((id: string, text: string) => {
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === id ? { ...message, content: `${message.content}${text}` } : message,
+      ),
     );
+  }, []);
 
-    const handleSendMessage = useCallback(
-        (content: string) => {
-            // ── 1. Add user message immediately ──────────────────
-            const userMsg: Message = {
-                id: Date.now().toString(),
-                role: "user",
-                content,
-            };
-            setMessages((prev) => [...prev, userMsg]);
-            setIsStreaming(true);
+  const handleSendMessage = useCallback(
+    (content: string) => {
+      const prompt = content.trim();
+      if (!prompt || isStreaming) return;
 
-            // ── 2. Create a placeholder assistant message ────────
-            const assistantId = (Date.now() + 1).toString();
-            const assistantMsg: Message = {
-                id: assistantId,
-                role: "assistant",
-                content: "",
-            };
-            setMessages((prev) => [...prev, assistantMsg]);
+      const assistantId = createMessageId("assistant");
+      setMessages((current) => [
+        ...current,
+        { id: createMessageId("user"), role: "user", content: prompt },
+        { id: assistantId, role: "assistant", content: "" },
+      ]);
+      setIsStreaming(true);
 
-            // ── 3. Start SSE stream ─────────────────────────────
-            abortRef.current = runAgent({
-                prompt: content,
-                campaignId: campaignId ?? undefined,
-                onEvent: (event: AgentEvent) => {
-                    switch (event.type) {
-                        case "text":
-                        case "text_chunk":
-                        case "final_response": {
-                            const text = event.data?.text ?? "";
-                            if (text) {
-                                updateAssistantMessage(assistantId, text);
-                            }
-                            break;
-                        }
-
-                        case "tool_call": {
-                            const calls = event.data?.calls ?? [];
-                            const names = calls
-                                .map((c: any) => c.name)
-                                .join(", ");
-                            appendAssistantMessage(
-                                `🔧 Calling: ${names}`,
-                                "tool_call"
-                            );
-                            break;
-                        }
-
-                        case "tool_result": {
-                            const results = event.data?.results ?? [];
-                            const names = results
-                                .map((r: any) => r.name)
-                                .join(", ");
-                            appendAssistantMessage(
-                                `✅ Result from: ${names}`,
-                                "tool_result"
-                            );
-                            break;
-                        }
-
-                        case "agent_transfer": {
-                            const target =
-                                event.data?.target_agent ?? "unknown";
-                            appendAssistantMessage(
-                                `🔄 Transferring to: ${target}`,
-                                "agent_transfer"
-                            );
-                            break;
-                        }
-
-                        case "state_update": {
-                            // Show a brief notification about state updates
-                            const keys = event.data?.state_delta
-                                ? Object.keys(event.data.state_delta)
-                                : [];
-                            if (keys.length > 0) {
-                                appendAssistantMessage(
-                                    `📋 Updated: ${keys.join(", ")}`,
-                                    "state_update"
-                                );
-                            }
-                            break;
-                        }
-
-                        case "error": {
-                            const errText =
-                                event.data?.error_message ??
-                                "Something went wrong.";
-                            updateAssistantMessage(
-                                assistantId,
-                                `⚠️ ${errText}`
-                            );
-                            break;
-                        }
-
-                        default:
-                            break;
-                    }
-                },
-                onDone: async (cId) => {
-                    setIsStreaming(false);
-                    if (cId) {
-                        setCampaignId(cId);
-                        // Fetch the completed campaign data for the content panel
-                        await fetchCampaign(cId);
-                        // Refresh the sidebar campaign list
-                        await fetchCampaignList();
-                    }
-                },
-                onError: (err) => {
-                    setIsStreaming(false);
-                    updateAssistantMessage(
-                        assistantId,
-                        `⚠️ ${err.message || "Connection failed."}`
-                    );
-                },
-            });
-        },
-        [
-            campaignId,
-            setCampaignId,
-            fetchCampaign,
-            fetchCampaignList,
-            appendAssistantMessage,
+      abortRef.current = runAgent({
+        prompt,
+        campaignId: campaignId ?? undefined,
+        onEvent: (event) =>
+          handleAgentEvent({
+            event,
+            assistantId,
             updateAssistantMessage,
-        ]
-    );
+            appendAssistantText,
+            appendAssistantMessage,
+          }),
+        onDone: async (completedCampaignId) => {
+          abortRef.current = null;
+          setIsStreaming(false);
+          if (!completedCampaignId) return;
 
-    return (
-        <div className="flex-1 flex flex-col h-full bg-[#FCFBF8] relative">
-            <header className="h-16 flex items-center justify-between px-6 border-b border-[#EBE7DC] bg-white/50 backdrop-blur-sm z-10">
-                <h1 className="font-medium text-[#1E2A24]">Campaign Copilot</h1>
-                <div className="flex gap-2 items-center">
-                    {isStreaming && (
-                        <span className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-emerald-50 text-emerald-600 rounded-full">
-                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                            Generating
-                        </span>
-                    )}
-                </div>
-            </header>
+          setCampaignId(completedCampaignId);
+          await Promise.all([
+            fetchCampaign(completedCampaignId),
+            fetchCampaignList(),
+          ]);
+        },
+        onError: (error) => {
+          abortRef.current = null;
+          setIsStreaming(false);
+          updateAssistantMessage(assistantId, `⚠️ ${error.message}`);
+        },
+      });
+    },
+    [
+      appendAssistantMessage,
+      appendAssistantText,
+      campaignId,
+      fetchCampaign,
+      fetchCampaignList,
+      isStreaming,
+      setCampaignId,
+      updateAssistantMessage,
+    ],
+  );
 
-            <ChatDisplay messages={messages} isStreaming={isStreaming} />
-            <ChatInput onSendMessage={handleSendMessage} disabled={isStreaming} />
-        </div>
-    );
+  return (
+    <div className="flex-1 flex flex-col h-full bg-[#FCFBF8] relative">
+      <header className="h-16 flex items-center justify-between px-6 border-b border-[#EBE7DC] bg-white/50 backdrop-blur-sm z-10">
+        <h1 className="font-medium text-[#1E2A24]">Campaign Copilot</h1>
+        {isStreaming && (
+          <span className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-emerald-50 text-emerald-600 rounded-full">
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+            Generating
+          </span>
+        )}
+      </header>
+
+      <ChatDisplay messages={messages} isStreaming={isStreaming} />
+      <ChatInput onSendMessage={handleSendMessage} disabled={isStreaming} />
+    </div>
+  );
+}
+
+function handleAgentEvent({
+  event,
+  assistantId,
+  updateAssistantMessage,
+  appendAssistantText,
+  appendAssistantMessage,
+}: {
+  event: AgentEvent;
+  assistantId: string;
+  updateAssistantMessage: (id: string, content: string) => void;
+  appendAssistantText: (id: string, text: string) => void;
+  appendAssistantMessage: (content: string, eventType: string) => void;
+}): void {
+  switch (event.type) {
+    case "text_chunk": {
+      appendAssistantText(assistantId, getText(event));
+      break;
+    }
+    case "text":
+    case "final_response":
+      updateAssistantMessage(assistantId, getText(event));
+      break;
+    case "tool_call":
+      appendAssistantMessage(`🔧 Calling: ${getNames(event, "calls")}`, "tool_call");
+      break;
+    case "tool_result":
+      appendAssistantMessage(`✅ Result from: ${getNames(event, "results")}`, "tool_result");
+      break;
+    case "agent_transfer":
+      appendAssistantMessage(
+        `🔄 Transferring to: ${getString(event.data.target_agent, "unknown")}`,
+        "agent_transfer",
+      );
+      break;
+    case "state_update": {
+      const state = event.data.state_delta;
+      const keys = isRecord(state) ? Object.keys(state) : [];
+      if (keys.length > 0) {
+        appendAssistantMessage(`📋 Updated: ${keys.join(", ")}`, "state_update");
+      }
+      break;
+    }
+    case "error":
+      updateAssistantMessage(
+        assistantId,
+        `⚠️ ${getString(event.data.error_message, "Something went wrong.")}`,
+      );
+      break;
+  }
+}
+
+function getText(event: AgentEvent): string {
+  return getString(event.data.text);
+}
+
+function getNames(event: AgentEvent, key: "calls" | "results"): string {
+  const values = event.data[key];
+  if (!Array.isArray(values)) return "the agent";
+
+  const names = values.flatMap((value) => {
+    return isRecord(value) && typeof value.name === "string" ? [value.name] : [];
+  });
+  return names.join(", ") || "the agent";
+}
+
+function getString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function createMessageId(prefix: string): string {
+  return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`;
 }
