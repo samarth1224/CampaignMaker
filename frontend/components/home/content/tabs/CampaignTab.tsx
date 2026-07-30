@@ -1,6 +1,9 @@
 "use client";
 import type { CampaignStrategy } from "@/interfaces/campaign.type";
 
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
 interface Props {
     strategy: CampaignStrategy | null;
 }
@@ -30,9 +33,9 @@ export default function CampaignTab({ strategy }: Props) {
                     {strategy.summary && (
                         <div>
                             <Label>Summary</Label>
-                            <p className="text-sm text-[#4A5B50] leading-relaxed">
-                                {strategy.summary}
-                            </p>
+                            <div className="text-sm text-[#4A5B50] leading-relaxed prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{strategy.summary}</ReactMarkdown>
+                            </div>
                         </div>
                     )}
                     {strategy.timeline && (

@@ -12,6 +12,15 @@ const PLATFORM_COLORS: Record<string, string> = {
     instagram: "bg-gradient-to-br from-purple-500 to-pink-500 text-white",
 };
 
+function cleanSvg(code: string): string {
+    if (!code) return "";
+    let cleaned = code.trim();
+    if (cleaned.startsWith("```")) {
+        cleaned = cleaned.replace(/^```(?:xml|svg|json)?\n?/, "").replace(/\n?```$/, "");
+    }
+    return cleaned.trim();
+}
+
 export default function MediaTab({ content }: Props) {
     const platforms = content.map((c) => c.platform);
     const [filter, setFilter] = useState<string>("all");
@@ -99,7 +108,7 @@ export default function MediaTab({ content }: Props) {
                             <div
                                 className="w-full h-full [&>svg]:w-full [&>svg]:h-full"
                                 dangerouslySetInnerHTML={{
-                                    __html: media.svg_code,
+                                    __html: cleanSvg(media.svg_code),
                                 }}
                             />
                             {/* Platform badge */}
@@ -130,7 +139,7 @@ export default function MediaTab({ content }: Props) {
                                 title="Download SVG"
                                 onClick={() => {
                                     const blob = new Blob(
-                                        [media.svg_code],
+                                        [cleanSvg(media.svg_code)],
                                         { type: "image/svg+xml" }
                                     );
                                     const url = URL.createObjectURL(blob);

@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
 import type { PlatformContent } from "@/interfaces/campaign.type";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface Props {
     content: PlatformContent[];
@@ -130,9 +132,9 @@ export default function PostsTab({ content }: Props) {
                             </div>
 
                             {/* Post text */}
-                            <p className="text-sm text-[#4A5B50] leading-relaxed whitespace-pre-wrap">
-                                {post.post_text}
-                            </p>
+                            <div className="text-sm text-[#4A5B50] leading-relaxed prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{post.post_text}</ReactMarkdown>
+                            </div>
 
                             {/* Post footer */}
                             <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#EBE7DC]">
