@@ -8,9 +8,11 @@ class PostContent(BaseModel):
 
 class GeneratedPostSummary(BaseModel):
     """Schema for the Content Generator orchestrator summary output"""
-    name: str
-    platform: str
-    summary: str
+    name: Optional[str] = "Campaign Post Set"
+    platform: Optional[str] = "twitter"
+    summary: Optional[str] = "Content generated successfully"
+    svg_code: Optional[str] = None
+    media_name: Optional[str] = None
 
 class SinglePost(BaseModel):
     """Individual generated post representation"""

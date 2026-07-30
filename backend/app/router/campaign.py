@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
-from beanie.operators import Eq
+from pydantic import BaseModel, Field
 
 from app.models.usermodel import User
 from app.models.campaign import Campaign
@@ -39,8 +37,8 @@ class CampaignDetail(BaseModel):
     title: str
     status: str
     strategy: dict | None = None
-    content: list = []
-    messages: list = []
+    content: list[dict] = Field(default_factory=list)
+    messages: list[dict] = Field(default_factory=list)
     created_at: str
     updated_at: str
 
@@ -48,7 +46,7 @@ class CampaignDetail(BaseModel):
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
 
-@router.get("/", response_model=List[CampaignListItem])
+@router.get("/", response_model=list[CampaignListItem])
 async def list_campaigns(
     user: User = Depends(verify_user_access_token),
 ):

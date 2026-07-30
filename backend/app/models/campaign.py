@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from typing import List, Literal, Optional
 
 from beanie import Document
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # ── Re-use agent schemas as embedded sub-documents ───────────────────────────
 from agent.schemas.CampaignMaker.CampaignMaker import CampaignStrategy
@@ -30,8 +30,17 @@ class PlatformContent(BaseModel):
     """Content generated for a single platform (e.g. Twitter)."""
 
     platform: str = ""
-    posts: PostCollection = Field(default_factory=list)
+    posts: Optional[PostCollection] = None
     media: List[PostContent] = Field(default_factory=list)
+
+    @field_validator("posts", mode="before")
+    @classmethod
+    def _coerce_empty_posts(cls, v):
+        """MongoDB may store [] when posts haven't been generated yet.
+        Pydantic expects a PostCollection dict or None, not a bare list."""
+        if isinstance(v, list):
+            return None
+        return v
 
 
 # ─── Campaign document (MongoDB collection: "campaigns") ────────────────────

@@ -1,125 +1,98 @@
-"""Agent interaction router — SSE endpoint for streaming ADK events."""
+"""Agent interaction router — streams public ADK events over SSE."""
 
 from __future__ import annotations
 
 import json
-import uuid
 import logging
-from typing import AsyncGenerator
+import uuid
+from collections.abc import AsyncGenerator, Mapping
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from agent.runner import APP_NAME, call_agent_async, create_session, runner, session_service
 from app.models.usermodel import User
-from app.models.campaign import Campaign
-from app.models.chat_message import Conversation, ChatMessage
+from app.services.campaign_run import (
+    AgentRunState,
+    CampaignAccessError,
+    mark_campaign_failed,
+    persist_completed_run,
+    prepare_campaign_run,
+)
 from app.utility.dependencies import verify_user_access_token
 from app.utility.event_parser import parse_event
 
-from agent.runner import create_session, call_agent_async, runner
-
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/agent", tags=["Agent"])
 
 
-# ─── Request / Response schemas ──────────────────────────────────────────────
-
-
 class AgentPromptRequest(BaseModel):
-    """Body sent by the frontend to start an agent run."""
+    """Body sent by the frontend to start or continue an agent run."""
 
-    prompt: str = Field(
-        ..., min_length=1, max_length=5000, description="The user prompt."
-    )
-    campaign_id: str | None = Field(
-        default=None,
-        description=(
-            "Existing campaign / session ID.  "
-            "Omit to start a brand-new session."
-        ),
-    )
+    prompt: str = Field(..., min_length=1, max_length=5000)
+    campaign_id: str | None = None
 
 
-# ─── SSE streaming helpers ───────────────────────────────────────────────────
-
-
-def _sse_encode(data: dict) -> str:
-    """Format a dict as a single SSE ``data:`` frame."""
+def _sse_encode(data: dict[str, object]) -> str:
+    """Format a dictionary as one SSE data frame."""
     return f"data: {json.dumps(data)}\n\n"
 
 
 def _sse_error(message: str) -> str:
-    """Format an error as an SSE frame the frontend can handle."""
-    return _sse_encode({"type": "error", "author": "system", "data": {"error_message": message}})
+    return _sse_encode(
+        {"type": "error", "author": "system", "data": {"error_message": message}}
+    )
 
 
 def _sse_done(campaign_id: str) -> str:
-    """Send a final ``[DONE]`` sentinel with the campaign_id so the client
-    knows to close and can reference the campaign later."""
-    return _sse_encode({"type": "done", "author": "system", "data": {"campaign_id": campaign_id}})
+    return _sse_encode(
+        {"type": "done", "author": "system", "data": {"campaign_id": campaign_id}}
+    )
 
 
-# ─── Core SSE generator ─────────────────────────────────────────────────────
+async def _load_session_state(
+    *, user_id: str, campaign_id: str
+) -> Mapping[str, object]:
+    """Read final session state once all ADK events have been consumed."""
+    try:
+        session = await session_service.get_session(
+            app_name=APP_NAME,
+            user_id=user_id,
+            session_id=campaign_id,
+        )
+        return session.state if session and session.state else {}
+    except Exception:
+        logger.exception("Unable to read final session state for campaign %s", campaign_id)
+        return {}
 
 
 async def _event_stream(
-    prompt: str,
-    user_id: str,
-    campaign_id: str,
+    *, prompt: str, user_id: str, campaign_id: str
 ) -> AsyncGenerator[str, None]:
-    """Async generator that drives the ADK agent and yields SSE frames.
+    """Drive the agent and yield only frontend-safe SSE frames."""
+    try:
+        campaign, conversation = await prepare_campaign_run(
+            campaign_id=campaign_id,
+            user_id=user_id,
+            prompt=prompt,
+        )
+    except CampaignAccessError as exc:
+        logger.warning("Rejected attempt to access campaign %s", campaign_id)
+        yield _sse_error(str(exc))
+        return
+    except Exception:
+        logger.exception("Unable to prepare campaign %s", campaign_id)
+        yield _sse_error("Unable to start this campaign.")
+        return
 
-    1. Creates (or reuses) a session via the runner.
-    2. Persists the user message to the Conversation document.
-    3. Calls ``call_agent_async`` which yields raw ADK ``Event`` objects.
-    4. Each event is passed through ``parse_event`` (the utility layer)
-       to produce a clean, frontend-friendly JSON dict.
-    5. Final text responses from the agent are also persisted.
-    6. A ``done`` event is sent at the end.
-    """
-    campaign_uuid = uuid.UUID(campaign_id)
-    user_uuid = uuid.UUID(user_id)
-
-    # ── 1. Ensure ADK session exists ──────────────────────────────────
     try:
         await create_session(user_id=user_id, campaign_id=campaign_id)
-    except Exception as exc:
-        logger.warning("Session creation failed (may already exist): %s", exc)
+    except Exception:
+        # Session creation raises when continuing an existing campaign.
+        logger.debug("Using existing agent session for campaign %s", campaign_id)
 
-    # ── 2. Ensure Campaign document exists ────────────────────────────
-    campaign = await Campaign.find_one(Campaign.campaign_id == campaign_uuid)
-    if not campaign:
-        campaign = Campaign(
-            campaign_id=campaign_uuid,
-            user_id=user_uuid,
-            title=prompt[:80],
-            status="generating",
-        )
-        await campaign.insert()
-
-    # ── 3. Get or create Conversation for this campaign ───────────────
-    conversation = await Conversation.find_one(
-        Conversation.campaign_id == campaign_uuid
-    )
-    if not conversation:
-        conversation = Conversation(
-            campaign_id=campaign_uuid,
-            user_id=user_uuid,
-            title=prompt[:80],
-        )
-        await conversation.insert()
-
-    # Persist the user's message
-    conversation.messages.append(ChatMessage(role="user", content=prompt))
-    campaign.status = "generating"
-    await conversation.save()
-    await campaign.save()
-
-    # ── 4. Stream agent events ────────────────────────────────────────
-    assistant_text_parts: list[str] = []
-    accumulated_state: dict = {}
+    run_state = AgentRunState()
     try:
         async for event in call_agent_async(
             prompt=prompt,
@@ -127,124 +100,53 @@ async def _event_stream(
             user_id=user_id,
             campaign_id=campaign_id,
         ):
-            parsed = parse_event(event)
-            if parsed is not None:
-                yield _sse_encode(parsed)
-
-                # Accumulate text for the final assistant message
-                if parsed["type"] in ("text", "text_chunk", "final_response"):
-                    text = parsed["data"].get("text", "")
-                    if text:
-                        assistant_text_parts.append(text)
-
-                # Accumulate state deltas for campaign persistence
-                if parsed["type"] == "state_update" and "state_delta" in parsed["data"]:
-                    accumulated_state.update(parsed["data"]["state_delta"])
-
+            parsed_event = parse_event(event)
+            run_state.record_event(event, parsed_event)
+            if parsed_event is not None:
+                yield _sse_encode(parsed_event)
     except RuntimeError as exc:
-        logger.error("Agent escalation: %s", exc)
+        logger.error("Agent escalation for campaign %s: %s", campaign_id, exc)
+        await mark_campaign_failed(campaign)
         yield _sse_error(str(exc))
-        campaign.status = "failed"
-        await campaign.save()
-    except Exception as exc:
-        logger.exception("Unexpected error during agent run")
-        yield _sse_error(f"Internal error: {exc}")
-        campaign.status = "failed"
-        await campaign.save()
+        return
+    except Exception:
+        logger.exception("Unexpected error during agent run for %s", campaign_id)
+        await mark_campaign_failed(campaign)
+        yield _sse_error("The agent could not complete this campaign.")
+        return
 
-    # ── 5. Persist assistant reply, strategy, content & mark complete ──
-    if assistant_text_parts:
-        full_reply = "".join(assistant_text_parts)
-        conversation.messages.append(
-            ChatMessage(role="assistant", content=full_reply)
+    run_state.merge_session_state(
+        await _load_session_state(user_id=user_id, campaign_id=campaign_id)
+    )
+    try:
+        await persist_completed_run(
+            campaign=campaign,
+            conversation=conversation,
+            run_state=run_state,
         )
-    await conversation.save()
+    except Exception:
+        logger.exception("Unable to persist completed campaign %s", campaign_id)
+        await mark_campaign_failed(campaign)
+        yield _sse_error("The campaign finished, but its results could not be saved.")
+        return
 
-    # Persist campaign strategy from agent state
-    # The key is "campaign_outline" matching campaign_outline_generator's output_key
-    if "campaign_outline" in accumulated_state:
-        try:
-            from agent.schemas.CampaignMaker.CampaignMaker import CampaignStrategy
-            strategy_data = accumulated_state["campaign_outline"]
-            if isinstance(strategy_data, dict):
-                campaign.strategy = CampaignStrategy(**strategy_data)
-            else:
-                campaign.strategy = strategy_data
-        except Exception as exc:
-            logger.warning("Failed to persist campaign strategy: %s", exc)
-
-    # Persist generated content per platform
-    from agent.schemas.ContentGenerator.ContentGenerator import PostContent, PostCollection
-    from app.models.campaign import PlatformContent
-
-    # Check for twitter content
-    for platform_key, platform_name in [
-        ("twitter_posts_text", "twitter"),
-        ("linkedin_posts_text", "linkedin"),
-        ("instagram_posts_text", "instagram"),
-    ]:
-        if platform_key in accumulated_state:
-            try:
-                posts_data = accumulated_state[platform_key]
-                if isinstance(posts_data, dict):
-                    posts = PostCollection(**posts_data)
-                else:
-                    posts = posts_data
-
-                # Find or create platform content entry
-                pc = next((p for p in campaign.content if p.platform == platform_name), None)
-                if not pc:
-                    pc = PlatformContent(platform=platform_name)
-                    campaign.content.append(pc)
-                pc.posts = posts
-            except Exception as exc:
-                logger.warning("Failed to persist %s content: %s", platform_name, exc)
-
-    # Check for generated media / SVG content
-    if "post_content" in accumulated_state:
-        try:
-            media_data = accumulated_state["post_content"]
-            if isinstance(media_data, str):
-                import json as _json
-                media_data = _json.loads(media_data)
-            if isinstance(media_data, dict):
-                media = PostContent(**media_data)
-                # Add to the most recent platform content or twitter by default
-                platform = accumulated_state.get("current_platform", "twitter")
-                pc = next((p for p in campaign.content if p.platform == platform), None)
-                if not pc:
-                    pc = PlatformContent(platform=platform)
-                    campaign.content.append(pc)
-                pc.media.append(media)
-        except Exception as exc:
-            logger.warning("Failed to persist media content: %s", exc)
-
-    campaign.status = "completed"
-    await campaign.save()
-
-    # ── 6. Signal completion ──────────────────────────────────────────
     yield _sse_done(campaign_id)
-
-
-# ─── Route ───────────────────────────────────────────────────────────────────
 
 
 @router.post("/run")
 async def run_agent(
     body: AgentPromptRequest,
     user: User = Depends(verify_user_access_token),
-):
-    """Stream ADK agent events to the frontend via Server-Sent Events.
-
-    The endpoint accepts a JSON body with the user prompt (and an
-    optional ``campaign_id``).  If ``campaign_id`` is not supplied a new
-    UUID is generated automatically.
-
-    **Response**: ``text/event-stream`` — each frame is a JSON object
-    with ``type``, ``author``, and ``data`` keys.  The stream ends with
-    a ``done`` event containing the ``campaign_id``.
-    """
+) -> StreamingResponse:
+    """Start or continue a campaign and stream its agent events as SSE."""
     campaign_id = body.campaign_id or str(uuid.uuid4())
+    try:
+        uuid.UUID(campaign_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="campaign_id must be a valid UUID.",
+        ) from exc
 
     return StreamingResponse(
         _event_stream(
@@ -256,7 +158,6 @@ async def run_agent(
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "X-Accel-Buffering": "no",
         },
     )
-
