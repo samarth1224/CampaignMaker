@@ -1,4 +1,4 @@
-####  The Live Link for the app will launch soon....
+
 # CampaignMaker AI
 
 
