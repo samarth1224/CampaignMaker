@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { type AgentEvent, runAgent } from "@/lib/agent";
 import { useCampaign } from "@/lib/campaign-context";
+import { uploadDocuments } from "@/lib/documents";
 
 import ChatDisplay from "./ChatDisplay";
 import ChatInput from "./ChatInput";
@@ -18,6 +19,8 @@ interface Message {
 export default function ChatContainer() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const {
     campaignId,
@@ -123,6 +126,30 @@ export default function ChatContainer() {
     ],
   );
 
+  const handleUploadDocuments = useCallback(
+    async (files: File[]) => {
+      if (isUploading || isStreaming) return;
+
+      setIsUploading(true);
+      setUploadStatus(
+        `Indexing ${files.length === 1 ? files[0].name : `${files.length} documents`}…`,
+      );
+      try {
+        const uploaded = await uploadDocuments(files, campaignId ?? undefined);
+        const chunks = uploaded.reduce((total, document) => total + document.chunk_count, 0);
+        setUploadStatus(
+          `${uploaded.length === 1 ? uploaded[0].filename : `${uploaded.length} documents`} ready for campaign context (${chunks} chunks indexed).`,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Document upload failed.";
+        setUploadStatus(`Upload failed: ${message}`);
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [campaignId, isStreaming, isUploading],
+  );
+
   return (
     <div className="flex-1 flex flex-col h-full bg-[#FCFBF8] relative">
       <header className="h-16 flex items-center justify-between px-6 border-b border-[#EBE7DC] bg-white/50 backdrop-blur-sm z-10">
@@ -136,7 +163,13 @@ export default function ChatContainer() {
       </header>
 
       <ChatDisplay messages={messages} isStreaming={isStreaming} />
-      <ChatInput onSendMessage={handleSendMessage} disabled={isStreaming} />
+      <ChatInput
+        onSendMessage={handleSendMessage}
+        onUploadDocuments={handleUploadDocuments}
+        disabled={isStreaming}
+        isUploading={isUploading}
+        uploadStatus={uploadStatus}
+      />
     </div>
   );
 }

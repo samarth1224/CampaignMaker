@@ -54,6 +54,7 @@ async def create_session(user_id, campaign_id) -> Session:
         app_name=APP_NAME,
         user_id=str(user_id),
         session_id=str(campaign_id),
+        state={"user:rag_user_id": str(user_id)},
     )
 
 

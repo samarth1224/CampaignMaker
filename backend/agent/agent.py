@@ -7,6 +7,7 @@ from agent.callbacks.CampaignMaker.after_agent_callbacks import check_loop_exit
 from agent.callbacks.RootAgent.before_agent_callback import initialize_state
 from agent.tools.CampaignMaker import exit_loop
 from agent.tools.RootAgent import save_state
+from agent.tools.knowledge_base import search_uploaded_documents
 
 # Prompts
 from agent.prompts.root_agent import prompt_root_agent
@@ -112,7 +113,8 @@ root_agent = LlmAgent(
     description="Main orchestrator that coordinates campaign strategy and content creation",
     tools=[
         AgentTool(agent=content_generator_agent),
-        save_state
+        save_state,
+        search_uploaded_documents,
     ],
     sub_agents=[campaign_maker],
     before_agent_callback=[initialize_state],

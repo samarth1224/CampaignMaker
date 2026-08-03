@@ -24,10 +24,22 @@ To ensure seamless collaboration between agents and prevent context loss, Campai
 - **Context Narrowing**: By breaking down the task, specific agent receives only the specific context (state) it needs rather than the entire conversation history. 
 - **Persistence**: Utilizes callbacks (like `initialize_state`) and tools (like `save_state`) tied to the Root Agent. This allows to track various states—such as `campaign_strategy`, `approved_outlines`, and `generated_content`—ensuring data is persisted across agent handoffs and displayed correctly in the frontend UI.
 
-##  Under Construction: RAG with ChromaDB
+##  Document context (ChromaDB RAG)
 
-Actively integrating **Retrieval-Augmented Generation (RAG) using ChromaDB**. 
-This feature is currently under construction and will allow the agents to extract content from Documents.
+CampaignMaker can ground a campaign in the user's brand material. Use the paperclip in the chat to upload up to five **PDF, DOCX, TXT, Markdown, or CSV** files (15 MB each by default). The API extracts text, splits it into overlapping chunks, creates Gemini embeddings, and persists the chunks in ChromaDB. The root agent then has a scoped `search_uploaded_documents` tool it uses to retrieve relevant brand facts while planning and writing campaign content.
+
+The knowledge base is stored at `backend/data/chroma` by default (configure with `CHROMA_PERSIST_DIRECTORY`) and every chunk is filtered by the authenticated user ID before retrieval. Original uploads are not stored after their text is indexed. Scanned PDFs need OCR before upload.
+
+Required backend configuration:
+
+```env
+GOOGLE_API_KEY=your-gemini-api-key
+# Optional
+CHROMA_PERSIST_DIRECTORY=./data/chroma
+RAG_EMBEDDING_MODEL=gemini-embedding-001
+RAG_CHUNK_SIZE=1200
+RAG_CHUNK_OVERLAP=200
+```
 
 ##  Known Deficiencies & Shortcomings
 
